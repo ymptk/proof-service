@@ -1,0 +1,13 @@
+bin/
+obj/
+packages/
+node_modules/
+*.tmp
+*.log
+*.cache
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.sublime-*
+*.txt

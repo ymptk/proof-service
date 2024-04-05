@@ -1,10 +1,5 @@
-using System.IO;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
+using Groth16.Net;
+using ProofService.interfaces;
 using Serilog;
 using Serilog.Formatting.Json;
 
@@ -19,9 +14,21 @@ public class Startup
             .SetBasePath(Directory.GetCurrentDirectory())
             .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
         var configuration = builder.Build();
-        // var proverSetting = configuration.GetSection("ProverSetting").Get<ProverSetting>();
-        // using var prover = Prover.Create(proverSetting.WasmPath, proverSetting.R1csPath, proverSetting.ZkeyPath);
-        // services.AddSingleton(prover);
+        var proverSetting = configuration.GetSection("ProverSetting").Get<ProverSetting>();
+        Prover prover;
+        if (File.Exists(proverSetting.WasmPath) && File.Exists(proverSetting.R1csPath) &&
+            File.Exists(proverSetting.ZkeyPath))
+        {
+            prover = Prover.Create(proverSetting.WasmPath, proverSetting.R1csPath, proverSetting.ZkeyPath);
+        }
+        else
+        {
+            prover = new Prover();
+        }
+        
+        // Dependency injection
+        services.AddSingleton(prover);
+
         // Add framework services.
         services.AddControllers();
     }
@@ -45,10 +52,12 @@ public class Startup
         app.UseStaticFiles();
         app.UseDirectoryBrowser();
 
+        // Log configs
         Log.Logger = new LoggerConfiguration()
             .WriteTo.Console(new JsonFormatter())
             .WriteTo.File(new JsonFormatter(), "logs/GrothServiceLog-.log",
-                rollingInterval: RollingInterval.Day, retainedFileCountLimit: 3, fileSizeLimitBytes: 2L * 1024 * 1024 * 1024)
+                rollingInterval: RollingInterval.Day, retainedFileCountLimit: 3,
+                fileSizeLimitBytes: 2L * 1024 * 1024 * 1024)
             .CreateLogger();
 
         // Add Serilog to the logger factory

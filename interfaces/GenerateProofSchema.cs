@@ -4,7 +4,7 @@ namespace ProofService.interfaces;
 
 public abstract class ProofGenerationSchema
 {
-    public class ProofGenerationRequest
+    public class ProofGenerationTestRequest
     {
         [JsonPropertyName("jwt")]
         public List<string> Jwt { get; set; }
@@ -19,21 +19,24 @@ public abstract class ProofGenerationSchema
         public List<string> Salt { get; set; }
     }
     
-    public class ProofGenerationRequest2
+    public class ProofGenerationRequest
     {
         [JsonPropertyName("jwt")]
         public string Jwt { get; set; }
         
         [JsonPropertyName("salt")]
         public string Salt { get; set; }
-        
-        [JsonPropertyName("identifierHash")]
-        public string IdentifierHash { get; set; }
     }
     
     public class ProofGenerationResponse
     {
         [JsonPropertyName("proof")]
         public string Proof { get; set; }
+        
+        [JsonPropertyName("identifierHash")]
+        public string IdentifierHash { get; set; }
+        
+        [JsonPropertyName("publicKey")]
+        public string PublicKey { get; set; }
     }
 }

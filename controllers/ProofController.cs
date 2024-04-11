@@ -1,12 +1,19 @@
 using System.IdentityModel.Tokens.Jwt;
 using AElf;
+using AElf.Client;
+using AElf.Client.Dto;
+using AElf.Types;
+using Google.Protobuf;
+using Google.Protobuf.WellKnownTypes;
 using Groth16.Net;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using Portkey.Contracts.CA;
 using ProofService.interfaces;
 using RestSharp;
+using ZkVerifier;
 
 namespace ProofService.controllers;
 
@@ -18,11 +25,13 @@ public class ProofController : ControllerBase
     private readonly Prover _prover;
 
     private string ProofStr =
-        "e4f43e941f23f1478ffd459a9f6ec97e60ad790467bb9ffca97d7865ac5df09953cbaf72d64482095954e1770b249de00e405b2c5ac47b601850cac0939749183f8447be0c6b3e44e7bb61100b1f6b0fac038ea4f56271c45f2a3ebe79a367034aa423bf11f4dc3ab21440dd6642255d4a50d843a3db42fc3fa79852adec062f";
+        "dd035f99330d5786b42537194346d69f1b4c2ce359b3191981d92451e5d90600736a41a5b2e104c7598f185deb60b4ae150050a3ddb11122a81bdcc10754211c9a8e0e56ebcc6547823aef5d407995601e5d480d0be7440bff95d31fe43b34045d70e8b844d1399e0cc86a09d8fece16e86714d903635ad6d4cebeea986f0b82";
+
     private string IdentifierHash =
-        "4d603a0116641104814928a5a5bbcb967f28418508345c20d1faf80bab6329c3";
+        "217f047dbbf7b6233d427a811ac87ce13587ed66b9d8d1df10304f747e71ef65";
+
     private string PublicKey =
-        "3NXwASNf_7-9hOWDKyZ39qgz-yl_npuIsBgxnhNoE7WyQQl-muajPsQRdFqM-HWsAAbS_WtLrmf2aRSmjXBm8wXHIeJjcrZiWeUnSyfZLDr13jxXhN0rDvdiZEsAlaKuh-iCgwC_pXd0TtWpaYlv5FFguuSitKTOiDR6z3eSZUd0XNxr8POCDQ7VlG_4HyzhsO7nOwgivO-PzekDEbcoLI93U8uzKZXYHSRxYWhoSp47PbM9D5WbuwXqbmXRp9TjiJUy6GqEOJ4K2FNvqe-g6C3BnpPVuHZNaVf8QGP806rWrWPdJ0irGBhg-EasC-sdFSrH3kxMxBFfVsuj69U-7Q";
+        "dcd5f001235fffbfbd84e5832b2677f6a833fb297f9e9b88b018319e136813b5b241097e9ae6a33ec411745a8cf875ac0006d2fd6b4bae67f66914a68d7066f305c721e26372b66259e5274b27d92c3af5de3c5784dd2b0ef762644b0095a2ae87e8828300bfa577744ed5a969896fe45160bae4a2b4a4ce88347acf77926547745cdc6bf0f3820d0ed5946ff81f2ce1b0eee73b0822bcef8fcde90311b7282c8f7753cbb32995d81d24716168684a9e3b3db33d0f959bbb05ea6e65d1a7d4e3889532e86a84389e0ad8536fa9efa0e82dc19e93d5b8764d6957fc4063fcd3aad6ad63dd2748ab181860f846ac0beb1d152ac7de4c4cc4115f56cba3ebd53eed";
 
     public ProofController(ILogger<ProofController> logger, Prover prover)
     {
@@ -44,8 +53,6 @@ public class ProofController : ControllerBase
 
             // get google public key from jwt
             var publicKey = await GetGooglePublicKeyFromJwt(jwt);
-            // get guardianIdentifierHash from jwt
-            var guardianIdentifierHash = GetGuardianIdentifierHashFromJwt(jwt, request.Salt);
             // google public key to hex
             var publicKeyHex = BitConverter
                 .ToString(WebEncoders.Base64UrlDecode(publicKey)).Replace("-", "")
@@ -80,8 +87,9 @@ public class ProofController : ControllerBase
                 ? StatusCode(200, new ProofGenerationSchema.ProofGenerationResponse
                 {
                     Proof = provingOutput.Proof,
-                    IdentifierHash = guardianIdentifierHash,
-                    PublicKey = publicKey
+                    IdentifierHash =
+                        GetGuardianIdentifierHashFromJwtPublicInputs(new List<string>(provingOutput.PublicInputs)),
+                    PublicKey = publicKeyHex
                 })
                 : StatusCode(500, "proof generate fail");
         }
@@ -91,7 +99,53 @@ public class ProofController : ControllerBase
             return StatusCode(500, e.Message);
         }
     }
-    
+
+    [HttpPost("info")]
+    public async Task<IActionResult> Info(ProofGenerationSchema.ProofGenerationRequest request)
+    {
+        try
+        {
+            var handler = new JwtSecurityTokenHandler();
+            var jwt = handler.ReadJwtToken(request.Jwt);
+
+            // get google public key from jwt
+            var publicKey = await GetGooglePublicKeyFromJwt(jwt);
+            // google public key to hex
+            var publicKeyHex = BitConverter
+                .ToString(WebEncoders.Base64UrlDecode(publicKey)).Replace("-", "")
+                .ToLower();
+            var zkVk = _prover.ExportVerifyingKeyBn254();
+            return StatusCode(200, new Dictionary<string, string>
+            {
+                {"publicKey", publicKeyHex},
+                {"zkVk", zkVk}
+            });
+        }
+        catch (Exception e)
+        {
+            _logger.LogError("proof generate exception, e: {msg}", e.Message);
+            return StatusCode(500, e.Message);
+        }
+    }
+
+    [HttpPost("initialize")]
+    public async Task<IActionResult> Initialize(ProofGenerationSchema.InitializeRequest request)
+    {
+        try
+        {
+            var res = await InitializeAsync(request.Endpoint, request.ContractAddress, request.WalletAddress,
+                request.Pk, request.PublicKey, request.Vk);
+            return res
+                ? StatusCode(200, "initialize succeed")
+                : StatusCode(500, "initialize fail");
+        }
+        catch (Exception e)
+        {
+            _logger.LogError("proof generate exception, e: {msg}", e.Message);
+            return StatusCode(500, e.Message);
+        }
+    }
+
     [HttpPost("generate-test")]
     public IActionResult GenerateProofTest(ProofGenerationSchema.ProofGenerationTestRequest request)
     {
@@ -110,6 +164,24 @@ public class ProofController : ControllerBase
             return verified
                 ? StatusCode(200, new ProofGenerationSchema.ProofGenerationResponse {Proof = provingOutput.Proof})
                 : StatusCode(500, "proof generate fail");
+        }
+        catch (Exception e)
+        {
+            _logger.LogError("proof generate exception, e: {msg}", e.Message);
+            return StatusCode(500, e.Message);
+        }
+    }
+    
+    [HttpPost("create-test")]
+    public async Task<IActionResult> CreateTest(ProofGenerationSchema.InitializeRequest request)
+    {
+        try
+        {
+            var res = await InitializeAsync(request.Endpoint, request.ContractAddress, request.WalletAddress,
+                request.Pk, request.PublicKey, request.Vk);
+            return res
+                ? StatusCode(200, "initialize succeed")
+                : StatusCode(500, "initialize fail");
         }
         catch (Exception e)
         {
@@ -136,8 +208,9 @@ public class ProofController : ControllerBase
             return StatusCode(500, e.Message);
         }
     }
-    
+
     #region private method
+
     private static byte[] HexStringToByteArray(string hex)
     {
         var length = hex.Length;
@@ -151,11 +224,11 @@ public class ProofController : ControllerBase
         return byteArray;
     }
 
-    private static string GetGuardianIdentifierHashFromJwt(JwtSecurityToken jwt, string salt)
+    private static string GetGuardianIdentifierHashFromJwtPublicInputs(List<string> publicInputs)
     {
-        var guardianIdentifier = jwt.Payload.Sub;
-        var hash = HashHelper.ComputeFrom(guardianIdentifier).ToHex();
-        var guardianIdentifierHash = HashHelper.ComputeFrom(salt + hash).ToHex();
+        var idHash = publicInputs.GetRange(0, 32);
+        var identifierHash = idHash.Select(s => byte.Parse(s)).ToArray();
+        var guardianIdentifierHash = identifierHash.ToHex();
         return guardianIdentifierHash;
     }
 
@@ -201,6 +274,82 @@ public class ProofController : ControllerBase
 
         return paddedBytes;
     }
+
+    private static async Task<bool> InitializeAsync(string endpoint, string contractAddress, string walletAddress,
+        string pk, string publicKey, string vk)
+    {
+        AElfClient client = new AElfClient(endpoint);
+        var isConnected = await client.IsConnectedAsync();
+        if (!isConnected) return false;
+        // var contractAddress = "";
+        // var pk = "";
+
+        var initializeInput = new InitializeInput
+        {
+            ContractAdmin = Address.FromBase58(walletAddress)
+        };
+        SendTransaction(client, contractAddress, "Initialize", pk, initializeInput);
+
+        var setCreateHolderEnabledInput = new SetCreateHolderEnabledInput
+        {
+            CreateHolderEnabled = true
+        };
+        SendTransaction(client, contractAddress, "SetCreateHolderEnabled", pk, setCreateHolderEnabledInput);
+
+        var issuerPublicKeyEntry = new IssuerPublicKeyEntry
+        {
+            IssuerName = "Google",
+            IssuerPubkey = publicKey
+        };
+        SendTransaction(client, contractAddress, "AddZkIssuer", pk, issuerPublicKeyEntry);
+
+        var addVerifierServerEndPointsInput = new AddVerifierServerEndPointsInput
+        {
+            Name = "Portkey",
+            ImageUrl = "https://portkey-did.s3.ap-northeast-1.amazonaws.com/img/Portkey.png",
+            EndPoints = {endpoint},
+            VerifierAddressList = {Address.FromBase58(walletAddress)}
+        };
+        SendTransaction(client, contractAddress, "AddVerifierServerEndPoints", pk, addVerifierServerEndPointsInput);
+
+        var stringValue = new StringValue
+        {
+            Value = vk
+        };
+        SendTransaction(client, contractAddress, "SetZkVerifiyingKey", pk, stringValue);
+        return true;
+    }
+
+    private static async void SendTransaction(AElfClient client, string contractAddress, string methodName, string pk,
+        IMessage param)
+    {
+        // var tokenContractAddress = await client.GetContractAddressByNameAsync(HashHelper.ComputeFrom("AElf.ContractNames.Token"));
+        // var methodName = "Transfer";
+        // var param = new TransferInput
+        // {
+        //     To = new Address {Value = Address.FromBase58("7s4XoUHfPuqoZAwnTV7pHWZAaivMiL8aZrDSnY9brE1woa8vz").Value},
+        //     Symbol = "ELF",
+        //     Amount = 1000000000,
+        //     Memo = "transfer in demo"
+        // };
+        var ownerAddress = client.GetAddressFromPrivateKey(pk);
+
+        // Generate a transfer transaction.
+        var transaction = await client.GenerateTransactionAsync(ownerAddress, contractAddress, methodName, param);
+        var txWithSign = client.SignTransaction(pk, transaction);
+
+        // Send the transfer transaction to AElf chain node.
+        var result = await client.SendTransactionAsync(new SendTransactionInput
+        {
+            RawTransaction = txWithSign.ToByteArray().ToHex()
+        });
+
+        await Task.Delay(2000);
+        // After the transaction is mined, query the execution results.
+        var transactionResult = await client.GetTransactionResultAsync(result.TransactionId);
+        Console.WriteLine(transactionResult.Status);
+    }
+
     #endregion
 }
 

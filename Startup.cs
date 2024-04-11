@@ -52,6 +52,9 @@ public class Startup
         app.UseStaticFiles();
         app.UseDirectoryBrowser();
 
+        // app.UseSwagger();
+        // app.UseSwaggerUI();
+
         // Log configs
         Log.Logger = new LoggerConfiguration()
             .WriteTo.Console(new JsonFormatter())

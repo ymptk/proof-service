@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using AElf;
 using AElf.Client;
 using AElf.Client.Dto;
+using AElf.Contracts.MultiToken;
 using AElf.Types;
 using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
@@ -76,6 +77,16 @@ public class ProofController : ControllerBase
             provingInput["signature"] = signature;
             provingInput["pubkey"] = pubkey;
             provingInput["salt"] = salt;
+
+            var payloadStartIndex = request.Jwt.IndexOf(".") + 1;
+            var subClaim = PadString("\"sub\":" + jwt.Payload.Sub + ",", 41);
+            var subClaimLength = jwt.Payload.Sub.Length;
+            var subIndexB64 = payloadStartIndex * 4 / 3;
+            var subLengthB64 = subIndexB64.Length;
+            var subNameLength = 5;
+            var subColonIndex = 5;
+            var subValueIndex = 6;
+            var subValueLength = 23;
 
             // exec ProveBn254
             var provingOutputString = _prover.ProveBn254(provingInput);
@@ -189,6 +200,39 @@ public class ProofController : ControllerBase
             return StatusCode(500, e.Message);
         }
     }
+    
+    [HttpPost("call-test")]
+    public async Task<IActionResult> CallTest(ProofGenerationSchema.CallTestRequest request)
+    {
+        try
+        {
+            AElfClient client = new AElfClient(request.Endpoint);
+            var isConnected = await client.IsConnectedAsync();
+            if (!isConnected) return StatusCode(500, "call fail");
+            var transferInput = new TransferInput
+            {
+                To = Address.FromBase58(request.ToAddress),
+                Symbol = "ELF",
+                Amount = 1000000000,
+                Memo = "test"
+            };
+            _logger.LogDebug("args: " + transferInput.ToByteString());
+            var managerForwardCallInput = new ManagerForwardCallInput
+            {
+                CaHash = Hash.LoadFromHex(request.CaHash),
+                ContractAddress = Address.FromBase58(request.TokenContractAddress),
+                MethodName = "Transfer",
+                Args = transferInput.ToByteString()
+            };
+            SendTransaction(client, request.CaContractAddress, "ManagerForwardCall", request.Pk, managerForwardCallInput);
+            return StatusCode(200, "call succeed");
+        }
+        catch (Exception e)
+        {
+            _logger.LogError("call exception, e: {msg}", e.Message);
+            return StatusCode(500, e.Message);
+        }
+    }
 
     [HttpPost("generate-mock")]
     public IActionResult GenerateProofMock(ProofGenerationSchema.ProofGenerationRequest request)
@@ -211,7 +255,7 @@ public class ProofController : ControllerBase
 
     #region private method
 
-    private static byte[] HexStringToByteArray(string hex)
+    private byte[] HexStringToByteArray(string hex)
     {
         var length = hex.Length;
         var byteArray = new byte[length / 2];
@@ -224,7 +268,7 @@ public class ProofController : ControllerBase
         return byteArray;
     }
 
-    private static string GetGuardianIdentifierHashFromJwtPublicInputs(List<string> publicInputs)
+    private string GetGuardianIdentifierHashFromJwtPublicInputs(List<string> publicInputs)
     {
         var idHash = publicInputs.GetRange(0, 32);
         var identifierHash = idHash.Select(s => byte.Parse(s)).ToArray();
@@ -232,7 +276,7 @@ public class ProofController : ControllerBase
         return guardianIdentifierHash;
     }
 
-    private static async Task<string> GetGooglePublicKeyFromJwt(JwtSecurityToken jwt)
+    private async Task<string> GetGooglePublicKeyFromJwt(JwtSecurityToken jwt)
     {
         var options = new RestClientOptions("https://www.googleapis.com/oauth2/v3/certs");
         var client = new RestClient(options);
@@ -257,12 +301,12 @@ public class ProofController : ControllerBase
         return "";
     }
 
-    private static ProvingOutput ParseProvingOutput(string provingOutput)
+    private ProvingOutput ParseProvingOutput(string provingOutput)
     {
         return JsonConvert.DeserializeObject<ProvingOutput>(provingOutput);
     }
 
-    private static List<string> PadString(string str, int paddedBytesSize)
+    private List<string> PadString(string str, int paddedBytesSize)
     {
         var paddedBytes = str.Select(c => ((int) c).ToString()).ToList();
 
@@ -275,7 +319,7 @@ public class ProofController : ControllerBase
         return paddedBytes;
     }
 
-    private static async Task<bool> InitializeAsync(string endpoint, string contractAddress, string walletAddress,
+    private async Task<bool> InitializeAsync(string endpoint, string contractAddress, string walletAddress,
         string pk, string publicKey, string vk)
     {
         AElfClient client = new AElfClient(endpoint);
@@ -343,11 +387,15 @@ public class ProofController : ControllerBase
         {
             RawTransaction = txWithSign.ToByteArray().ToHex()
         });
+        Console.WriteLine(result.TransactionId);
 
-        await Task.Delay(2000);
+        await Task.Delay(10000);
         // After the transaction is mined, query the execution results.
         var transactionResult = await client.GetTransactionResultAsync(result.TransactionId);
-        Console.WriteLine(transactionResult.Status);
+        Console.WriteLine(transactionResult.Status != "MINED"
+            ? methodName + ": " + result.TransactionId + ": " + transactionResult.Status + ": " +
+              transactionResult.Error
+            : methodName + ": " + result.TransactionId + ": " + transactionResult.Status);
     }
 
     #endregion

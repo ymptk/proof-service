@@ -1,4 +1,5 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Text;
 using AElf;
 using AElf.Client;
 using AElf.Client.Dto;
@@ -41,6 +42,93 @@ public class ProofController : ControllerBase
 
     [HttpPost("generate")]
     public async Task<IActionResult> GenerateProof(ProofGenerationSchema.ProofGenerationRequest request)
+    {
+        try
+        {
+            var jwtHeader = request.Jwt.Split(".")[0];
+            var jwtPayload = request.Jwt.Split(".")[1];
+            var jwtSignature = request.Jwt.Split(".")[2];
+
+            var handler = new JwtSecurityTokenHandler();
+            var jwt = handler.ReadJwtToken(request.Jwt);
+
+            // get google public key from jwt
+            var publicKey = await GetGooglePublicKeyFromJwt(jwt);
+            // google public key to hex
+            var publicKeyHex = BitConverter
+                .ToString(WebEncoders.Base64UrlDecode(publicKey)).Replace("-", "")
+                .ToLower();
+            // google public key hex to chunked bytes
+            var pubkey = Helpers.HexToChunkedBytes(publicKeyHex, 121, 17)
+                .Select(s => s.HexToBigInt()).ToList();
+            // jwt signature to hex
+            var signatureHex = BitConverter
+                .ToString(WebEncoders.Base64UrlDecode(jwtSignature)).Replace("-", "")
+                .ToLower();
+            // jwt signature hex to chunked bytes
+            var signature = Helpers.HexToChunkedBytes(signatureHex, 121, 17)
+                .Select(s => s.HexToBigInt()).ToList();
+            // salt hex to chunked bytes
+            var salt = HexStringToByteArray(request.Salt).Select(b => b.ToString()).ToList();
+
+            var payloadStartIndex = request.Jwt.IndexOf(".") + 1;
+            var subClaim = PadString("\"sub\":" + "\"" + jwt.Payload.Sub + "\"" + ",", 41);
+            var subClaimLength = jwt.Payload.Sub.Length + 9;
+            var jsonString = ParseJwtPayload(jwtPayload);
+            // the start index of field sub
+            var startIndex = jsonString.IndexOf("\"sub\"");
+            // the start index of field sub value
+            var valueStartIndex = jsonString.IndexOf('"', startIndex + 5) + 1;
+            // the end index of field sub value
+            var valueEndIndex = jsonString.IndexOf('"', valueStartIndex);
+            var subIndexB64 = payloadStartIndex + startIndex * 4 / 3;
+            var subLengthB64 = (valueEndIndex + 2 - (startIndex - 1)) * 4 / 3;
+            var subNameLength = 5;
+            var subColonIndex = 5;
+            var subValueIndex = 6;
+            var subValueLength = 23;
+            
+            // build parameters of ProveBn254
+            IDictionary<string, IList<string>> provingInput = new Dictionary<string, IList<string>>();
+            provingInput["jwt"] = PadString(jwtHeader + "." + jwtPayload, 2048);
+            provingInput["signature"] = signature;
+            provingInput["pubkey"] = pubkey;
+            provingInput["salt"] = salt;
+            provingInput["payload_start_index"] = new List<string>{payloadStartIndex.ToString()};
+            provingInput["sub_claim"] = subClaim;
+            provingInput["sub_claim_length"] = new List<string>{subClaimLength.ToString()};
+            provingInput["sub_index_b64"] = new List<string>{subIndexB64.ToString()};
+            provingInput["sub_length_b64"] = new List<string>{subLengthB64.ToString()};
+            provingInput["sub_name_length"] = new List<string>{subNameLength.ToString()};
+            provingInput["sub_colon_index"] = new List<string>{subColonIndex.ToString()};
+            provingInput["sub_value_index"] = new List<string>{subValueIndex.ToString()};
+            provingInput["sub_value_length"] = new List<string>{subValueLength.ToString()};
+            
+            // exec ProveBn254
+            var provingOutputString = _prover.ProveBn254(provingInput);
+            var provingOutput = ParseProvingOutput(provingOutputString);
+            // verify output
+            var verified = Verifier.VerifyBn254(_prover.ExportVerifyingKeyBn254(), provingOutput.PublicInputs,
+                provingOutput.Proof);
+            return verified
+                ? StatusCode(200, new ProofGenerationSchema.ProofGenerationResponse
+                {
+                    Proof = provingOutput.Proof,
+                    IdentifierHash =
+                        GetGuardianIdentifierHashFromJwtPublicInputs(new List<string>(provingOutput.PublicInputs)),
+                    PublicKey = publicKeyHex
+                })
+                : StatusCode(500, "proof generate fail");
+        }
+        catch (Exception e)
+        {
+            _logger.LogError("proof generate exception, e: {msg}", e.Message);
+            return StatusCode(500, e.Message);
+        }
+    }
+    
+    [HttpPost("generate-v1")]
+    public async Task<IActionResult> GenerateProofV1(ProofGenerationSchema.ProofGenerationRequest request)
     {
         try
         {
@@ -211,7 +299,16 @@ public class ProofController : ControllerBase
 
     #region private method
 
-    private static byte[] HexStringToByteArray(string hex)
+    private string ParseJwtPayload(string payload)
+    {
+        string padded = payload.Length % 4 == 0 ? payload : payload + "====".Substring(payload.Length % 4);
+        string base64 = padded.Replace("_", "/").Replace("-", "+");
+        byte[] outputb = Convert.FromBase64String(base64);
+        string outStr = Encoding.Default.GetString(outputb);
+        return outStr;
+    }
+    
+    private byte[] HexStringToByteArray(string hex)
     {
         var length = hex.Length;
         var byteArray = new byte[length / 2];
@@ -224,7 +321,7 @@ public class ProofController : ControllerBase
         return byteArray;
     }
 
-    private static string GetGuardianIdentifierHashFromJwtPublicInputs(List<string> publicInputs)
+    private string GetGuardianIdentifierHashFromJwtPublicInputs(List<string> publicInputs)
     {
         var idHash = publicInputs.GetRange(0, 32);
         var identifierHash = idHash.Select(s => byte.Parse(s)).ToArray();
@@ -232,7 +329,7 @@ public class ProofController : ControllerBase
         return guardianIdentifierHash;
     }
 
-    private static async Task<string> GetGooglePublicKeyFromJwt(JwtSecurityToken jwt)
+    private async Task<string> GetGooglePublicKeyFromJwt(JwtSecurityToken jwt)
     {
         var options = new RestClientOptions("https://www.googleapis.com/oauth2/v3/certs");
         var client = new RestClient(options);
@@ -257,12 +354,12 @@ public class ProofController : ControllerBase
         return "";
     }
 
-    private static ProvingOutput ParseProvingOutput(string provingOutput)
+    private ProvingOutput ParseProvingOutput(string provingOutput)
     {
         return JsonConvert.DeserializeObject<ProvingOutput>(provingOutput);
     }
 
-    private static List<string> PadString(string str, int paddedBytesSize)
+    private List<string> PadString(string str, int paddedBytesSize)
     {
         var paddedBytes = str.Select(c => ((int) c).ToString()).ToList();
 
@@ -275,7 +372,7 @@ public class ProofController : ControllerBase
         return paddedBytes;
     }
 
-    private static async Task<bool> InitializeAsync(string endpoint, string contractAddress, string walletAddress,
+    private async Task<bool> InitializeAsync(string endpoint, string contractAddress, string walletAddress,
         string pk, string publicKey, string vk)
     {
         AElfClient client = new AElfClient(endpoint);
@@ -320,7 +417,7 @@ public class ProofController : ControllerBase
         return true;
     }
 
-    private static async void SendTransaction(AElfClient client, string contractAddress, string methodName, string pk,
+    private async void SendTransaction(AElfClient client, string contractAddress, string methodName, string pk,
         IMessage param)
     {
         // var tokenContractAddress = await client.GetContractAddressByNameAsync(HashHelper.ComputeFrom("AElf.ContractNames.Token"));
@@ -344,7 +441,7 @@ public class ProofController : ControllerBase
             RawTransaction = txWithSign.ToByteArray().ToHex()
         });
 
-        await Task.Delay(2000);
+        await Task.Delay(10000);
         // After the transaction is mined, query the execution results.
         var transactionResult = await client.GetTransactionResultAsync(result.TransactionId);
         Console.WriteLine(transactionResult.Status);

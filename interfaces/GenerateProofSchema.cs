@@ -96,4 +96,25 @@ public abstract class ProofGenerationSchema
         [JsonPropertyName("contractAddress")]
         public string ContractAddress { get; set; }
     }
+    
+    public class CallTestRequest
+    {
+        [JsonPropertyName("endpoint")]
+        public string Endpoint { get; set; }
+        
+        [JsonPropertyName("caHash")]
+        public string CaHash { get; set; }
+        
+        [JsonPropertyName("toAddress")]
+        public string ToAddress { get; set; }
+        
+        [JsonPropertyName("tokenContractAddress")]
+        public string TokenContractAddress { get; set; }
+        
+        [JsonPropertyName("caContractAddress")]
+        public string CaContractAddress { get; set; }
+        
+        [JsonPropertyName("pk")]
+        public string Pk { get; set; }
+    }
 }

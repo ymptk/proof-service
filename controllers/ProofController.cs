@@ -3,6 +3,7 @@ using System.Text;
 using AElf;
 using AElf.Client;
 using AElf.Client.Dto;
+using AElf.Contracts.MultiToken;
 using AElf.Types;
 using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
@@ -274,6 +275,39 @@ public class ProofController : ControllerBase
         catch (Exception e)
         {
             _logger.LogError("proof generate exception, e: {msg}", e.Message);
+            return StatusCode(500, e.Message);
+        }
+    }
+    
+    [HttpPost("call-test")]
+    public async Task<IActionResult> CallTest(ProofGenerationSchema.CallTestRequest request)
+    {
+        try
+        {
+            AElfClient client = new AElfClient(request.Endpoint);
+            var isConnected = await client.IsConnectedAsync();
+            if (!isConnected) return StatusCode(500, "call fail");
+            var transferInput = new TransferInput
+            {
+                To = Address.FromBase58(request.ToAddress),
+                Symbol = "ELF",
+                Amount = 1000000000,
+                Memo = "test"
+            };
+            _logger.LogDebug("args: " + transferInput.ToByteString());
+            var managerForwardCallInput = new ManagerForwardCallInput
+            {
+                CaHash = Hash.LoadFromHex(request.CaHash),
+                ContractAddress = Address.FromBase58(request.TokenContractAddress),
+                MethodName = "Transfer",
+                Args = transferInput.ToByteString()
+            };
+            SendTransaction(client, request.CaContractAddress, "ManagerForwardCall", request.Pk, managerForwardCallInput);
+            return StatusCode(200, "call succeed");
+        }
+        catch (Exception e)
+        {
+            _logger.LogError("call exception, e: {msg}", e.Message);
             return StatusCode(500, e.Message);
         }
     }

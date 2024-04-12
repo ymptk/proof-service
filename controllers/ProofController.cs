@@ -441,10 +441,15 @@ public class ProofController : ControllerBase
             RawTransaction = txWithSign.ToByteArray().ToHex()
         });
 
+        _logger.LogInformation(result.TransactionId);
+
         await Task.Delay(10000);
         // After the transaction is mined, query the execution results.
         var transactionResult = await client.GetTransactionResultAsync(result.TransactionId);
-        Console.WriteLine(transactionResult.Status);
+        _logger.LogInformation(transactionResult.Status != "MINED"
+            ? methodName + ": " + result.TransactionId + ": " + transactionResult.Status + ": " +
+              transactionResult.Error
+            : methodName + ": " + result.TransactionId + ": " + transactionResult.Status);
     }
 
     #endregion

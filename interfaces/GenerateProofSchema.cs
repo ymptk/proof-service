@@ -45,6 +45,9 @@ public abstract class ProofGenerationSchema
         [JsonPropertyName("endpoint")]
         public string Endpoint { get; set; }
         
+        [JsonPropertyName("ip")]
+        public string Ip { get; set; }
+        
         [JsonPropertyName("contractAddress")]
         public string ContractAddress { get; set; }
         
@@ -116,5 +119,39 @@ public abstract class ProofGenerationSchema
         
         [JsonPropertyName("pk")]
         public string Pk { get; set; }
+        
+        [JsonPropertyName("amount")]
+        public int Amount { get; set; }
     }
+    
+    public class ProofLoginInRequest
+    {
+        [JsonPropertyName("proof")]
+        public string Proof { get; set; }
+        
+        [JsonPropertyName("identifierHash")]
+        public string IdentifierHash { get; set; }
+        
+        [JsonPropertyName("publicKey")]
+        public string PublicKey { get; set; }
+        
+        [JsonPropertyName("managerAddress")]
+        public string ManagerAddress { get; set; }
+        
+        [JsonPropertyName("salt")]
+        public string Salt { get; set; }
+    }
+    
+    public class ProofLoginInResponse
+    {
+        [JsonPropertyName("caCash")]
+        public string CaCash { get; set; }
+        
+        [JsonPropertyName("caAddress")]
+        public string CaAddress { get; set; }
+        
+        [JsonPropertyName("managerAddress")]
+        public List<string> ManagerAddress { get; set; }
+    }
+    
 }

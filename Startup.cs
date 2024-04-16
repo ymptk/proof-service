@@ -14,6 +14,7 @@ public class Startup
             .SetBasePath(Directory.GetCurrentDirectory())
             .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
         var configuration = builder.Build();
+        var contractClient = configuration.GetSection("ContractClient").Get<ContractClient>();
         var proverSetting = configuration.GetSection("ProverSetting").Get<ProverSetting>();
         Prover prover;
         if (File.Exists(proverSetting.WasmPath) && File.Exists(proverSetting.R1csPath) &&
@@ -28,9 +29,18 @@ public class Startup
         
         // Dependency injection
         services.AddSingleton(prover);
+        services.AddSingleton(contractClient);
 
         // Add framework services.
         services.AddControllers();
+        
+        // Log.Logger = new LoggerConfiguration()
+        //     .WriteTo.Console(new JsonFormatter())
+        //     .WriteTo.File(new JsonFormatter(), "logs/GrothServiceLog-.log",
+        //         rollingInterval: RollingInterval.Day, retainedFileCountLimit: 3,
+        //         fileSizeLimitBytes: 2L * 1024 * 1024 * 1024, level)
+        //     .CreateLogger();
+        services.AddLogging(logging => logging.AddSerilog());
     }
 
     // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
@@ -56,15 +66,15 @@ public class Startup
         // app.UseSwaggerUI();
 
         // Log configs
-        Log.Logger = new LoggerConfiguration()
-            .WriteTo.Console(new JsonFormatter())
-            .WriteTo.File(new JsonFormatter(), "logs/GrothServiceLog-.log",
-                rollingInterval: RollingInterval.Day, retainedFileCountLimit: 3,
-                fileSizeLimitBytes: 2L * 1024 * 1024 * 1024)
-            .CreateLogger();
+        // Log.Logger = new LoggerConfiguration()
+        //     .WriteTo.Console(new JsonFormatter())
+        //     .WriteTo.File(new JsonFormatter(), "logs/GrothServiceLog-.log",
+        //         rollingInterval: RollingInterval.Day, retainedFileCountLimit: 3,
+        //         fileSizeLimitBytes: 2L * 1024 * 1024 * 1024)
+        //     .CreateLogger();
 
         // Add Serilog to the logger factory
-        loggerFactory.AddSerilog();
+        // loggerFactory.AddSerilog();
 
         app.UseEndpoints(endpoints => { endpoints.MapControllers(); });
     }

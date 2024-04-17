@@ -575,7 +575,7 @@ public class ProofController : ControllerBase
         return await SendTransaction(client, caContractAddress, "CreateCAHolder", pk, createCAHolderInput);
     }
     
-    private async Task<bool> AddZkIssuerPublicKey(AElfClient client, string contractAddress, string pk,
+    private async Task AddZkIssuerPublicKey(AElfClient client, string contractAddress, string pk,
         string identifierHash, string walletAddress, string salt, string publicKey, string proof)
     {
         var issuerPublicKeyEntry = new IssuerPublicKeyEntry
@@ -590,7 +590,6 @@ public class ProofController : ControllerBase
         {
             await SendTransaction(client, contractAddress, "AddZkIssuerPublicKey", pk, issuerPublicKeyEntry);
         }
-        return await Task.FromResult<>(true);
     }
 
     private async Task<TransactionResultDto> SendTransaction(AElfClient client, string contractAddress,

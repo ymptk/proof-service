@@ -81,6 +81,8 @@ public class ProofController : ControllerBase
             // if holder is null, just needs to create holder and add manager address
             else
             {
+                // add new public key to zkIssuer
+                await AddZkIssuerPublicKey(client, caContractAddress, pk, identifierHash, walletAddress, salt, publicKeyHex, proof);
                 // await InitializeAsync(ip, endpoint, caContractAddress, walletAddress, pk, publicKeyHex, zkVk);
                 var result = await CreateCaHolder(client, caContractAddress, pk, identifierHash, walletAddress, salt, publicKeyHex, proof);
                 
@@ -573,6 +575,24 @@ public class ProofController : ControllerBase
         return await SendTransaction(client, caContractAddress, "CreateCAHolder", pk, createCAHolderInput);
     }
     
+    private async Task<bool> AddZkIssuerPublicKey(AElfClient client, string contractAddress, string pk,
+        string identifierHash, string walletAddress, string salt, string publicKey, string proof)
+    {
+        var issuerPublicKeyEntry = new IssuerPublicKeyEntry
+        {
+            IssuerName = "Google",
+            IssuerPubkey = publicKey
+        };
+        var publicKeysBytes = await CallTransaction(client, walletAddress, contractAddress, "GetZkIssuerPublicKeyList", pk,
+            new StringValue {Value = ""});
+        var publicKeyList = PublicKeyList.Parser.ParseFrom(publicKeysBytes).PublicKeys;
+        if (!publicKeyList.Contains(publicKey))
+        {
+            await SendTransaction(client, contractAddress, "AddZkIssuerPublicKey", pk, issuerPublicKeyEntry);
+        }
+        return await Task.FromResult<>(true);
+    }
+
     private async Task<TransactionResultDto> SendTransaction(AElfClient client, string contractAddress,
         string methodName, string pk,
         IMessage param)
@@ -599,16 +619,11 @@ public class ProofController : ControllerBase
         });
 
         _logger.LogInformation(result.TransactionId);
-        Console.WriteLine(result.TransactionId);
 
         await Task.Delay(5000);
         // After the transaction is mined, query the execution results.
         var transactionResult = await client.GetTransactionResultAsync(result.TransactionId);
         _logger.LogInformation(transactionResult.Status != "MINED"
-            ? methodName + ": " + result.TransactionId + ": " + transactionResult.Status + ": " +
-              transactionResult.Error
-            : methodName + ": " + result.TransactionId + ": " + transactionResult.Status);
-        Console.WriteLine(transactionResult.Status != "MINED"
             ? methodName + ": " + result.TransactionId + ": " + transactionResult.Status + ": " +
               transactionResult.Error
             : methodName + ": " + result.TransactionId + ": " + transactionResult.Status);

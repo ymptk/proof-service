@@ -42,26 +42,26 @@ public abstract class ProofGenerationSchema
     
     public class InitializeRequest
     {
-        [JsonPropertyName("endpoint")]
-        public string Endpoint { get; set; }
-        
         [JsonPropertyName("ip")]
         public string Ip { get; set; }
-        
-        [JsonPropertyName("contractAddress")]
-        public string ContractAddress { get; set; }
-        
-        [JsonPropertyName("walletAddress")]
-        public string WalletAddress { get; set; }
-        
-        [JsonPropertyName("pk")]
-        public string Pk { get; set; }
-        
+
         [JsonPropertyName("publicKey")]
         public string PublicKey { get; set; }
-
-        [JsonPropertyName("vk")]
-        public string Vk { get; set; }
+        
+        // [JsonPropertyName("endpoint")]
+        // public string Endpoint { get; set; }
+        //
+        // [JsonPropertyName("contractAddress")]
+        // public string ContractAddress { get; set; }
+        //
+        // [JsonPropertyName("walletAddress")]
+        // public string WalletAddress { get; set; }
+        //
+        // [JsonPropertyName("pk")]
+        // public string Pk { get; set; }
+        //
+        // [JsonPropertyName("vk")]
+        // public string Vk { get; set; }
     }
     
     public class CreateTestRequest

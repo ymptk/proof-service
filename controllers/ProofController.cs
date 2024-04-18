@@ -47,7 +47,7 @@ public class ProofController : ControllerBase
             var walletAddress = _contractClient.WalletAddress;
             var caContractAddress = _contractClient.CaContractAddress;
             var pk = _contractClient.PK;
-            var client = new AElfClient(_contractClient.ENDPOINT);
+            var client = new AElfClient("http://" + _contractClient.IP + ":8000");
 
             // get holder info to check whether needs to create new holder
             GetHolderInfoOutput holderInfo = null;
@@ -287,8 +287,10 @@ public class ProofController : ControllerBase
     {
         try
         {
-            var res = await InitializeAsync(request.Ip, request.Endpoint, request.ContractAddress, request.WalletAddress,
-                request.Pk, request.PublicKey, request.Vk);
+            var endpoint = "http://" + request.Ip + ":8000";
+            var zkVk = _prover.ExportVerifyingKeyBn254();
+            var res = await InitializeAsync(request.Ip, endpoint, _contractClient.CaContractAddress, _contractClient.WalletAddress,
+                _contractClient.PK, request.PublicKey, zkVk);
             return res
                 ? StatusCode(200, "initialize succeed")
                 : StatusCode(500, "initialize fail");

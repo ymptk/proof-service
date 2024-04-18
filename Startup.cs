@@ -1,7 +1,6 @@
 using Groth16.Net;
 using ProofService.interfaces;
 using Serilog;
-using Serilog.Formatting.Json;
 
 namespace ProofService;
 
@@ -13,6 +12,8 @@ public class Startup
         var builder = new ConfigurationBuilder()
             .SetBasePath(Directory.GetCurrentDirectory())
             .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
+        var logger = services.BuildServiceProvider().GetRequiredService<ILogger<Startup>>();
+        services.AddSingleton(logger);
         var configuration = builder.Build();
         var contractClient = configuration.GetSection("ContractClient").Get<ContractClient>();
         var proverSetting = configuration.GetSection("ProverSetting").Get<ProverSetting>();
@@ -20,7 +21,9 @@ public class Startup
         if (File.Exists(proverSetting.WasmPath) && File.Exists(proverSetting.R1csPath) &&
             File.Exists(proverSetting.ZkeyPath))
         {
+            logger.LogInformation("Loading zk files......");
             prover = Prover.Create(proverSetting.WasmPath, proverSetting.R1csPath, proverSetting.ZkeyPath);
+            logger.LogInformation("Loading zk files completed");
         }
         else
         {

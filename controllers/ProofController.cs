@@ -288,9 +288,10 @@ public class ProofController : ControllerBase
         try
         {
             // var endpoint = "http://" + request.Ip + ":8000";
+            var publicKey = String.IsNullOrEmpty(request.PublicKey) ? "init" : request.PublicKey;
             var zkVk = _prover.ExportVerifyingKeyBn254();
             var res = await InitializeAsync(request.Ip, request.Endpoint, _contractClient.CaContractAddress, _contractClient.WalletAddress,
-                _contractClient.PK, request.PublicKey, zkVk);
+                _contractClient.PK, publicKey, zkVk);
             return res
                 ? StatusCode(200, "initialize succeed")
                 : StatusCode(500, "initialize fail");

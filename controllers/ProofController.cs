@@ -287,9 +287,9 @@ public class ProofController : ControllerBase
     {
         try
         {
-            var endpoint = "http://" + request.Ip + ":8000";
+            // var endpoint = "http://" + request.Ip + ":8000";
             var zkVk = _prover.ExportVerifyingKeyBn254();
-            var res = await InitializeAsync(request.Ip, endpoint, _contractClient.CaContractAddress, _contractClient.WalletAddress,
+            var res = await InitializeAsync(request.Ip, request.Endpoint, _contractClient.CaContractAddress, _contractClient.WalletAddress,
                 _contractClient.PK, request.PublicKey, zkVk);
             return res
                 ? StatusCode(200, "initialize succeed")

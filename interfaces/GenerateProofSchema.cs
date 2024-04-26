@@ -48,8 +48,8 @@ public abstract class ProofGenerationSchema
         [JsonPropertyName("publicKey")]
         public string PublicKey { get; set; }
         
-        // [JsonPropertyName("endpoint")]
-        // public string Endpoint { get; set; }
+        [JsonPropertyName("endpoint")]
+        public string Endpoint { get; set; }
         //
         // [JsonPropertyName("contractAddress")]
         // public string ContractAddress { get; set; }
